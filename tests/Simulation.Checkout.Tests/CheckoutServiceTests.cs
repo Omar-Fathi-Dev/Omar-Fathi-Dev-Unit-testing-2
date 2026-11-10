@@ -249,4 +249,112 @@ public class CheckoutServiceTests
     
     
     //Task 2 : 2.1 --->  Valid order, all items in stock
+    [Fact]
+    public async Task CheckoutAsync_ValidOrder_SavesAndSendsConfirmationOnce()
+    {
+        // Arrange
+        Order order = new()
+        {
+            CustomerName="Omar Fathy" ,
+            CustomerEmail= "Omar@gmail.com",
+            Items = new List<OrderItem>(){new OrderItem()
+            {
+                ProductId = Guid.NewGuid(),
+                ProductName = "PC",
+                UnitPrice = 100m,
+                Quantity = 1
+            }}
+        };
+        Mock<IInventoryService> inventoryMock = new Mock<IInventoryService>();
+        Mock<IOrderRepository> orderRepositoryMock = new Mock<IOrderRepository>();
+        Mock<INotificationService> notificationMock = new Mock<INotificationService>();
+        inventoryMock.Setup(x => x.IsAvailableAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        CheckoutService checkoutService = new CheckoutService(orderRepositoryMock.Object , 
+            inventoryMock.Object, notificationMock.Object);
+        
+        
+        // Act
+        var result = await checkoutService.CheckoutAsync(order);
+        
+        
+        // Assert
+        notificationMock.Verify(x => x.SendOrderConfirmationAsync(It.IsAny<CheckoutReceipt>(),  It.IsAny<CancellationToken>()),Times.Once );
+        orderRepositoryMock.Verify(x => x.SaveAsync(It.IsAny<Order>(),  It.IsAny<CancellationToken>()),Times.Once );
+        result.Should().NotBeNull();
+    }
+    
+    
+    
+    //Task 2 : 2.2 --->   One item is out of stock
+    [Fact]
+    public async Task CheckoutAsync_ItemOutOfStock_ThrowsExceptionAndDoesNotSaveOrNotify()
+    {
+        // Arrange
+        Order order = new()
+        {
+            CustomerName="Omar Fathy" ,
+            CustomerEmail= "Omar@gmail.com",
+            Items = new List<OrderItem>(){new OrderItem()
+            {
+                ProductId = Guid.NewGuid(),
+                ProductName = "PC",
+                UnitPrice = 100m,
+                Quantity = 1
+            }}
+        };
+        Mock<IInventoryService> inventoryMock = new Mock<IInventoryService>();
+        Mock<IOrderRepository> orderRepositoryMock = new Mock<IOrderRepository>();
+        Mock<INotificationService> notificationMock = new Mock<INotificationService>();
+        inventoryMock.Setup(x => x.IsAvailableAsync(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        CheckoutService checkoutService = new CheckoutService(orderRepositoryMock.Object , 
+            inventoryMock.Object, notificationMock.Object);
+        
+        
+        // Act
+        Func<Task> act = () => checkoutService.CheckoutAsync(order);
+        
+        
+        // Assert
+        await act.Should().ThrowAsync<InsufficientInventoryException>();
+        notificationMock.Verify(x => x.SendOrderConfirmationAsync(It.IsAny<CheckoutReceipt>(),  It.IsAny<CancellationToken>()),Times.Never );
+        orderRepositoryMock.Verify(x => x.SaveAsync(It.IsAny<Order>(),  It.IsAny<CancellationToken>()),Times.Never );
+    }
+    
+    
+    //Task 2 : 2.3 --->    Order fails validation (e.g. quantity 0)
+    [Fact]
+    public async Task CheckoutAsync_InvalidQuantity_DoesNotCallDependencies()
+    {
+        // Arrange
+        Order order = new()
+        {
+            CustomerName="Omar Fathy" ,
+            CustomerEmail= "Omar@gmail.com",
+            Items = new List<OrderItem>(){new OrderItem()
+            {
+                ProductId = Guid.NewGuid(),
+                ProductName = "PC",
+                UnitPrice = 100m,
+                Quantity = 0
+            }}
+        };
+        Mock<IInventoryService> inventoryMock = new Mock<IInventoryService>();
+        Mock<IOrderRepository> orderRepositoryMock = new Mock<IOrderRepository>();
+        Mock<INotificationService> notificationMock = new Mock<INotificationService>();
+        CheckoutService checkoutService = new CheckoutService(orderRepositoryMock.Object , 
+            inventoryMock.Object, notificationMock.Object);
+        
+        
+        // Act
+        Func<Task> act = () => checkoutService.CheckoutAsync(order);
+        
+        
+        // Assert
+        await act.Should().ThrowAsync<InvalidQuantityException>();
+        notificationMock.Verify(x => x.SendOrderConfirmationAsync(It.IsAny<CheckoutReceipt>(),  It.IsAny<CancellationToken>()),Times.Never );
+        orderRepositoryMock.Verify(x => x.SaveAsync(It.IsAny<Order>(),  It.IsAny<CancellationToken>()),Times.Never );
+        inventoryMock.Verify(x => x.IsAvailableAsync(It.IsAny<Guid>(), It.IsAny<int>(),  It.IsAny<CancellationToken>()),Times.Never );
+    }
 }
